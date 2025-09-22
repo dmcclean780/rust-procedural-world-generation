@@ -1,0 +1,13 @@
+[package]
+name = "rust-procedural-world-generation"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = "0.28"
+egui = "0.28"
+rand = "0.9"
+rayon = "1.11"
+
+[profile.release]
+debug = true
