@@ -1,19 +1,19 @@
-use crate::{tiles::tile_kind::TileKind, action::Action, chunk_list::ChunkCoord};
+use crate::{action::Action, chunk_list::ChunkCoord, tiles::tile_kind::TileKind};
 use rand::prelude::*;
 
 pub struct Chunk {
     pub tiles: Vec<TileKind>, // row-major order
     dirty: bool,
-    incoming: Vec<IncomingTile>,
+    pub incoming: Vec<IncomingTile>,
     pub width: usize,
     pub height: usize,
     pub x: i32,
     pub y: i32,
 }
 
-struct IncomingTile {
-    location: (usize, usize), // (x, y) in chunk coordinates
-    tile: TileKind,
+pub struct IncomingTile {
+    pub location: (usize, usize), // (x, y) in chunk coordinates
+    pub tile: TileKind,
 }
 
 impl Chunk {
@@ -57,17 +57,15 @@ impl Chunk {
         self.dirty = true;
     }
 
-    pub fn clear_dirty(&mut self) {
+    pub fn mark_clean(&mut self) {
         self.dirty = false;
     }
 
     pub fn update(
         &self,
-        coord: ChunkCoord,
         chunk_neighbors: &[&Chunk],
-    ) -> (std::vec::Vec<TileKind>, std::vec::Vec<ChunkCoord>) {
-        let mut dirty_neighbors = Vec::new();
-        let mut new_tiles = Vec::with_capacity(self.width * self.height);
+    ) -> std::vec::Vec<Action> {
+        let mut actions = Vec::new();
 
         for y in 0..self.height {
             for x in 0..self.width {
@@ -77,40 +75,23 @@ impl Chunk {
                 // run rules to get an action
                 for rule in tile_kind.rules() {
                     let action = rule(x, y, self, chunk_neighbors);
-
-                    let next_tile = match action {
-                        Action::Replace(_, new_kind) => {
-                            dirty_neighbors.push(coord);
-                            new_kind
-                        }
-                        Action::Destroy(_) => {
-                            dirty_neighbors.push(coord);
-                            TileKind::Empty
-                        }
-                        Action::None => tile_kind.clone(),
-                    };
-
-                    new_tiles.push(next_tile);
-
-                    // mark neighbor chunks dirty if needed
                     if !matches!(action, Action::None) {
-                        if x == 0 {
-                            dirty_neighbors.push((coord.0 - 1, coord.1));
-                        }
-                        if x == self.width - 1 {
-                            dirty_neighbors.push((coord.0 + 1, coord.1));
-                        }
-                        if y == 0 {
-                            dirty_neighbors.push((coord.0, coord.1 - 1));
-                        }
-                        if y == self.height - 1 {
-                            dirty_neighbors.push((coord.0, coord.1 + 1));
-                        }
+                        actions.push(action.clone());
                     }
                 }
             }
         }
 
-        (new_tiles, dirty_neighbors)
+        actions
+    }
+
+    pub fn apply_incoming(&mut self) {
+        for incoming in self.incoming.drain(..) {
+            let (x, y) = incoming.location;
+            if x < self.width && y < self.height {
+                let idx = y * self.width + x;
+                self.tiles[idx] = incoming.tile;
+            }
+        }
     }
 }

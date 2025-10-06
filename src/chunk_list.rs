@@ -1,4 +1,8 @@
-use crate::{chunk::Chunk, tiles::tile_kind::TileKind};
+use crate::{
+    action::Action,
+    chunk::{Chunk, IncomingTile},
+    tiles::tile_kind::TileKind,
+};
 use rayon::prelude::*;
 use std::collections::HashMap;
 
@@ -63,8 +67,7 @@ impl ChunkList {
         // Ensure neighbors exist for edge chunks
         self.extend_chunks(&dirty_coords);
 
-        let mut next_states: HashMap<ChunkCoord, Vec<TileKind>> = HashMap::new();
-        let mut newly_dirty: Vec<ChunkCoord> = Vec::new();
+        let mut next_actions: HashMap<ChunkCoord, Vec<Action>> = HashMap::new();
 
         // Process chunks in color groups (9-color scheme)
         for color in 0..9 {
@@ -79,38 +82,71 @@ impl ChunkList {
                 .collect();
 
             // Phase 1: parallel compute next states (read-only)
-            let updates: Vec<(ChunkCoord, Vec<TileKind>, Vec<ChunkCoord>)> = chunks_of_color
+            let updates: Vec<(ChunkCoord, Vec<Action>)> = chunks_of_color
                 .par_iter()
                 .filter_map(|coord| {
                     let neighbors = self.get_neighbors(*coord);
                     if let Some(chunk) = self.alive_chunks.get(coord) {
-                        let (new_tiles, dirtied_neighbors) = chunk.update(*coord, &neighbors);
-                        Some((*coord, new_tiles, dirtied_neighbors))
+                        let new_tiles = chunk.update(&neighbors);
+                        Some((*coord, new_tiles))
                     } else {
                         None
                     }
                 })
                 .collect();
 
-            // Phase 2: sequentially apply updates (mutates state)
-            for (coord, new_tiles, dirtied_neighbors) in updates {
-                next_states.insert(coord, new_tiles);
-                newly_dirty.extend(dirtied_neighbors);
+            // Collect Actions and dirty chunks
+            for (coord, actions) in updates {
+                next_actions.insert(coord, actions);
             }
         }
 
-        // Commit new states
-        for (coord, next_tiles) in next_states {
+        let mut cross_swaps = Vec::new();
+
+        // Commit new actions
+        for (coord, actions) in next_actions {
             if let Some(chunk) = self.alive_chunks.get_mut(&coord) {
-                chunk.tiles = next_tiles;
-                chunk.clear_dirty();
+                for action in actions {
+                    match action {
+                        Action::Replace(idx, new_kind) => {
+                            chunk.tiles[idx] = new_kind;
+                            chunk.mark_dirty();
+                        }
+                        Action::Destroy(idx) => {
+                            chunk.tiles[idx] = TileKind::Empty;
+                            chunk.mark_dirty();
+                        }
+                        Action::Swap(idx_a, idx_b) => {
+                            chunk.tiles.swap(idx_a, idx_b);
+                            chunk.mark_dirty();
+                        }
+                        Action::SwapCrossChunk(idx_a, neighbor_coord, idx_b, tile_kind) => {
+                            // push into neighbor (deferred)
+                            cross_swaps.push((coord, idx_a, neighbor_coord, idx_b, tile_kind));
+                        }
+                        Action::None => {
+                            chunk.mark_clean();
+                        }
+                    }
+                }
             }
         }
 
-        // Mark dirty neighbors after commits
-        for coord in newly_dirty {
-            if let Some(neighbor) = self.alive_chunks.get_mut(&coord) {
-                neighbor.mark_dirty();
+        for (coord, idx_a, neighbor_coord, idx_b, tile_kind) in cross_swaps {
+            // careful: fetch chunks separately
+            let other_tile =
+                if let Some(neighbor_chunk) = self.alive_chunks.get_mut(&neighbor_coord) {
+                    let other_tile = neighbor_chunk.tiles[idx_b];
+                    neighbor_chunk.tiles[idx_b] = tile_kind;
+                    neighbor_chunk.mark_dirty();
+                    other_tile
+                } else {
+                    TileKind::Empty
+                };
+
+            if let Some(chunk) = self.alive_chunks.get_mut(&coord) {
+                chunk.tiles[idx_a] = other_tile;
+                chunk.mark_dirty();
             }
         }
     }

@@ -1,6 +1,7 @@
 use eframe::egui;
 
 mod action;
+mod bresenham;
 mod chunk;
 mod chunk_list;
 mod colors;
@@ -8,8 +9,9 @@ mod tile_map;
 mod tiles;
 mod viewport;
 
+use bresenham::plot_line;
 use chunk_list::ChunkList;
-use egui::{Pos2, Vec2};
+use egui::{ComboBox, Pos2, Vec2};
 use std::time::Instant;
 use tiles::tile_kind::TileKind;
 use viewport::Viewport;
@@ -34,6 +36,8 @@ struct MyApp {
     current_frame: u64,
     frame_timer: FrameTimer,
     brush_size: usize,
+    brush_element: TileKind,
+    last_mouse_pos: Option<Pos2>,
 }
 
 impl Default for MyApp {
@@ -62,6 +66,8 @@ impl Default for MyApp {
             current_frame: 0,
             frame_timer: FrameTimer::new(),
             brush_size: 3,
+            last_mouse_pos: None,
+            brush_element: TileKind::GameOfLife,
         }
     }
 }
@@ -86,6 +92,9 @@ impl eframe::App for MyApp {
             .show(ctx, |ui| {
                 ui.heading("Brush Size");
                 ui.add(egui::Slider::new(&mut self.brush_size, 1..=21).text("Brush Size"));
+                ui.horizontal(|ui| {
+                    self.tile_kind_selector(ui);
+                });
             });
 
         ctx.request_repaint();
@@ -104,6 +113,16 @@ impl MyApp {
         // Update every `interval` frames
         let should_update = self.simulation_running && (self.current_frame % interval as u64 == 0);
         should_update
+    }
+
+    fn tile_kind_selector( &mut self, ui: &mut egui::Ui) {
+        ComboBox::from_label("Tile Type")
+            .selected_text(format!("{:?}", self.brush_element))
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut self.brush_element, TileKind::Empty, "Empty");
+                ui.selectable_value(&mut self.brush_element, TileKind::GameOfLife, "Game of Life");
+                ui.selectable_value(&mut self.brush_element, TileKind::Sand, "Sand");
+            });
     }
 
     fn update_if_needed(&mut self) {
@@ -197,42 +216,50 @@ impl MyApp {
             .clamp(min_pixels_y, max_pixels_y) as usize;
     }
 
-    pub fn paint(&mut self, mouse_pos: Pos2, brush_size: usize) {
-        // Convert screen/mouse coordinates to world coordinates
-        let world_x = self.viewport.offset_x + mouse_pos.x as usize;
-        let world_y = self.viewport.offset_y + mouse_pos.y as usize;
+    pub fn paint_line(&mut self, start: Pos2, end: Pos2, brush_size: usize) {
+        // Convert screen coordinates to world coordinates
+        let start_tile_x = (self.viewport.offset_x as f32 + start.x) as usize / self.viewport.scale;
+        let start_tile_y = (self.viewport.offset_y as f32 + start.y) as usize / self.viewport.scale;
 
-        // Convert world coordinates to tile coordinates
-        let tile_x = world_x / self.viewport.scale;
-        let tile_y = world_y / self.viewport.scale;
+        let end_tile_x = (self.viewport.offset_x as f32 + end.x) as usize / self.viewport.scale;
+        let end_tile_y = (self.viewport.offset_y as f32 + end.y) as usize / self.viewport.scale;
+
+        // Use Bresenham’s algorithm to get all the tiles along the line
+        let line_points = plot_line(
+            start_tile_x as isize,
+            start_tile_y as isize,
+            end_tile_x as isize,
+            end_tile_y as isize,
+        );
 
         let brush_radius = (brush_size / 2) as isize;
-        for dy in -(brush_radius)..=(brush_radius) {
-            for dx in -(brush_radius)..=(brush_radius) {
-                let px = tile_x as isize + dx;
-                let py = tile_y as isize + dy;
 
-                if px < 0 || py < 0 {
-                    continue; // skip negative positions
-                }   
+        for (tx, ty) in line_points {
+            for dy in -brush_radius..=brush_radius {
+                for dx in -brush_radius..=brush_radius {
+                    let px = tx + dx;
+                    let py = ty + dy;
 
-                let px = px as usize;
-                let py = py as usize;
+                    if px < 0 || py < 0 {
+                        continue;
+                    }
 
-                // Determine which chunk this tile is in
-                let chunk_width = self.chunks.chunk_width;
-                let chunk_height = self.chunks.chunk_height;
+                    let px = px as usize;
+                    let py = py as usize;
 
-                let chunk_x = (px / chunk_width) as i32;
-                let chunk_y = (py / chunk_height) as i32;
+                    let chunk_width = self.chunks.chunk_width;
+                    let chunk_height = self.chunks.chunk_height;
 
-                let local_x = px % chunk_width;
-                let local_y = py % chunk_height;
+                    let chunk_x = (px / chunk_width) as i32;
+                    let chunk_y = (py / chunk_height) as i32;
 
-                // Update the chunk directly
-                if let Some(chunk) = self.chunks.alive_chunks.get_mut(&(chunk_x, chunk_y)) {
-                    chunk.tiles[local_y * chunk.width + local_x] = TileKind::GameOfLife;
-                    chunk.mark_dirty();
+                    let local_x = px % chunk_width;
+                    let local_y = py % chunk_height;
+
+                    if let Some(chunk) = self.chunks.alive_chunks.get_mut(&(chunk_x, chunk_y)) {
+                        chunk.tiles[local_y * chunk.width + local_x] = self.brush_element;
+                        chunk.mark_dirty();
+                    }
                 }
             }
         }
@@ -259,8 +286,21 @@ impl MyApp {
 
         if response.dragged_by(egui::PointerButton::Primary) {
             if let Some(mouse_pos) = response.hover_pos() {
-                self.paint(mouse_pos, self.brush_size);
+                let local_pos = mouse_pos - rect.min;
+                let mouse_pos = Pos2::new(local_pos.x, local_pos.y);
+                if let Some(last) = self.last_mouse_pos {
+                    // Draw line between last and current mouse positions
+                    self.paint_line(last, mouse_pos, self.brush_size);
+                } else {
+                    // First paint (single point)
+                    //self.paint(mouse_pos, self.brush_size);
+                }
+                // Update last mouse position
+                self.last_mouse_pos = Some(mouse_pos);
             }
+        } else {
+            // Reset when not dragging
+            self.last_mouse_pos = None;
         }
 
         // Draw the texture inside the allocated rectangle
