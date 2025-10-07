@@ -1,12 +1,11 @@
 use crate::{
-    action::Action, chunk::Chunk, colors::Colors, tile_checks::{below_tile, below_right_tile, below_left_tile},
+    action::Action, chunk::Chunk, tile_checks::{below_tile, below_right_tile, below_left_tile},
     tiles::tile_kind::TileKind,
 };
 
 pub struct Powder;
 
 impl Powder {
-    pub const COLOR: Colors = Colors::Yellow;
 
     pub fn fall_down_rule(x: usize, y: usize, chunk: &Chunk, neighbors: &[&Chunk]) -> Action {
         let idx = y * chunk.width + x;

@@ -1,16 +1,16 @@
+use crate::math::{div_floor, euclidean_mod};
 use eframe::egui;
-use crate::math::{euclidean_mod, div_floor};
 
 mod action;
 mod bresenham;
 mod chunk;
 mod chunk_list;
 mod colors;
+mod math;
 mod tile_checks;
 mod tile_map;
 mod tiles;
 mod viewport;
-mod math;
 
 use bresenham::plot_line;
 use chunk_list::ChunkList;
@@ -224,58 +224,49 @@ impl MyApp {
             .clamp(min_pixels_y, max_pixels_y) as isize;
     }
 
-pub fn paint_line(&mut self, start: Pos2, end: Pos2, brush_size: usize) {
-    let scale = self.viewport.scale as f32;
+    pub fn paint_line(&mut self, start: Pos2, end: Pos2, brush_size: usize) {
+        let scale = self.viewport.scale as f32;
 
-    // Convert screen → world tile coordinates
-    let start_tile_x = ((start.x + self.viewport.offset_x as f32) / scale).floor() as isize;
-    let start_tile_y = ((start.y + self.viewport.offset_y as f32) / scale).floor() as isize;
-    let end_tile_x = ((end.x + self.viewport.offset_x as f32) / scale).floor() as isize;
-    let end_tile_y = ((end.y + self.viewport.offset_y as f32) / scale).floor() as isize;
+        // Convert screen → world tile coordinates
+        let start_tile_x = ((start.x + self.viewport.offset_x as f32) / scale).floor() as isize;
+        let start_tile_y = ((start.y + self.viewport.offset_y as f32) / scale).floor() as isize;
+        let end_tile_x = ((end.x + self.viewport.offset_x as f32) / scale).floor() as isize;
+        let end_tile_y = ((end.y + self.viewport.offset_y as f32) / scale).floor() as isize;
 
-    // Bresenham line
-    let line_points = plot_line(start_tile_x, start_tile_y, end_tile_x, end_tile_y);
-    let brush_radius = (brush_size / 2) as isize;
+        // Bresenham line
+        let line_points = plot_line(start_tile_x, start_tile_y, end_tile_x, end_tile_y);
+        let brush_radius = (brush_size / 2) as isize;
 
-    for (tx, ty) in line_points {
-        for dy in -brush_radius..=brush_radius {
-            for dx in -brush_radius..=brush_radius {
-                let world_x = tx + dx;
-                let world_y = ty + dy;
+        for (tx, ty) in line_points {
+            for dy in -brush_radius..=brush_radius {
+                for dx in -brush_radius..=brush_radius {
+                    let world_x = tx + dx;
+                    let world_y = ty + dy;
 
-                let chunk_w = self.chunks.chunk_width;
-                let chunk_h = self.chunks.chunk_height;
+                    let chunk_w = self.chunks.chunk_width;
+                    let chunk_h = self.chunks.chunk_height;
 
-                // Use floor division to handle negative coordinates correctly
-                let chunk_x = div_floor(world_x, chunk_w as isize);
-                let chunk_y = div_floor(world_y, chunk_h as isize);
-                let local_x = euclidean_mod(world_x, chunk_w);
-                let local_y = euclidean_mod(world_y, chunk_h);
+                    // Use floor division to handle negative coordinates correctly
+                    let chunk_x = div_floor(world_x, chunk_w as isize);
+                    let chunk_y = div_floor(world_y, chunk_h as isize);
+                    let local_x = euclidean_mod(world_x, chunk_w);
+                    let local_y = euclidean_mod(world_y, chunk_h);
 
-                if let Some(chunk) = self.chunks.alive_chunks.get_mut(&(chunk_x as i32, chunk_y as i32)) {
-                    let idx = local_y as usize * chunk.width + local_x as usize;
-                    if idx < chunk.tiles.len() {
-                        chunk.tiles[idx] = self.brush_element;
-                        chunk.mark_dirty();
+                    if let Some(chunk) = self
+                        .chunks
+                        .alive_chunks
+                        .get_mut(&(chunk_x as i32, chunk_y as i32))
+                    {
+                        let idx = local_y as usize * chunk.width + local_x as usize;
+                        if idx < chunk.tiles.len() {
+                            chunk.tiles[idx] = self.brush_element;
+                            chunk.mark_dirty();
+                        }
                     }
                 }
             }
         }
     }
-}
-
-// Same helpers used in rendering
-fn div_floor(a: isize, b: isize) -> isize {
-    let mut q = a / b;
-    if (a ^ b) < 0 && a % b != 0 {
-        q -= 1;
-    }
-    q
-}
-
-fn euclidean_mod(a: isize, b: isize) -> isize {
-    ((a % b + b) % b)
-}
 
     fn create_central_panel(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         self.viewport.set_texture_from_chunks(ui, &self.chunks);
@@ -353,5 +344,3 @@ impl FrameTimer {
         self.fps
     }
 }
-
-

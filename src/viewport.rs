@@ -107,33 +107,6 @@ impl Viewport {
         tiles
     }
 
-    // pub fn convert_viewport_tiles_to_rgba_buffer(&self, visible_tiles: &Vec<TileKind>) -> Vec<u8> {
-    //     let mut viewport_pixels = vec![0u8; self.width_pixels * self.height_pixels * 4];
-
-    //     let tile_stride = self.width_tiles + 1;
-    //     let sub_x = self.offset_x % self.scale as isize;
-    //     let sub_y = self.offset_y % self.scale as isize;
-
-    //     for y in 0..self.height_pixels {
-    //         let src_tile_y = (y as isize + sub_y) / self.scale as isize;
-
-    //         for x in 0..self.width_pixels {
-    //             let src_tile_x = (x as isize + sub_x) / self.scale as isize;
-
-    //             let tile_idx = (src_tile_y * tile_stride as isize + src_tile_x) as usize;
-    //             let mut color = COLORS_RGBA[visible_tiles[tile_idx].to_colors().as_u8() as usize];
-    //             color[3] = visible_tiles[tile_idx]
-    //                 .to_colors()
-    //                 .random_alpha(src_tile_x as u32, src_tile_y as u32);
-
-    //             let dst_idx = (y * self.width_pixels + x) * 4;
-    //             viewport_pixels[dst_idx..dst_idx + 4].copy_from_slice(&color);
-    //         }
-    //     }
-
-    //     viewport_pixels
-    // }
-
     pub fn convert_viewport_tiles_to_rgba_buffer(
         &self,
         alive_chunks: &ChunkList,

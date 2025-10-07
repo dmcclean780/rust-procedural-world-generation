@@ -6,7 +6,7 @@ pub fn plot_line(mut x0: isize, mut y0: isize, x1: isize, y1: isize) -> Vec<(isi
     let sy = if y0 < y1 { 1 } else { -1 };
     let mut error = dx + dy;
 
-    while true {
+    loop {
         points.push((x0, y0));
         let e2 = 2 * error;
         if e2 >= dy {

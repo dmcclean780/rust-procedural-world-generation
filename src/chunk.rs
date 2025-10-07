@@ -1,25 +1,18 @@
-use crate::{action::Action, chunk_list::ChunkCoord, tiles::tile_kind::TileKind};
+use crate::{action::Action, tiles::tile_kind::TileKind};
 use rand::prelude::*;
 
 pub struct Chunk {
     pub tiles: Vec<TileKind>, // row-major order
     dirty: bool,
-    pub incoming: Vec<IncomingTile>,
     pub width: usize,
     pub height: usize,
     pub x: i32,
     pub y: i32,
 }
 
-pub struct IncomingTile {
-    pub location: (usize, usize), // (x, y) in chunk coordinates
-    pub tile: TileKind,
-}
-
 impl Chunk {
     pub fn new(width: usize, height: usize, x: i32, y: i32, blank: bool) -> Self {
         let dirty = true;
-        let incoming = Vec::new();
 
         let mut tiles = Vec::with_capacity(width * height);
 
@@ -45,7 +38,6 @@ impl Chunk {
             x,
             y,
             dirty,
-            incoming,
         }
     }
 
@@ -84,15 +76,5 @@ impl Chunk {
         }
 
         actions
-    }
-
-    pub fn apply_incoming(&mut self) {
-        for incoming in self.incoming.drain(..) {
-            let (x, y) = incoming.location;
-            if x < self.width && y < self.height {
-                let idx = y * self.width + x;
-                self.tiles[idx] = incoming.tile;
-            }
-        }
     }
 }

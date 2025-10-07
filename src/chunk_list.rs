@@ -1,6 +1,6 @@
 use crate::{
     action::Action,
-    chunk::{Chunk, IncomingTile},
+    chunk::{Chunk},
     tiles::tile_kind::TileKind,
 };
 use rayon::prelude::*;
@@ -37,23 +37,6 @@ impl ChunkList {
             chunk_width,
             chunk_height,
         }
-    }
-
-    pub fn get_tile_mut(&mut self, tile_x: usize, tile_y: usize) -> Option<&mut TileKind> {
-        let chunk_width = self.chunk_width;
-        let chunk_height = self.chunk_height;
-
-        // Determine which chunk the tile is in
-        let chunk_x = tile_x / chunk_width;
-        let chunk_y = tile_y / chunk_height;
-
-        // Compute local coordinates inside the chunk
-        let local_x = tile_x % chunk_width;
-        let local_y = tile_y % chunk_height;
-
-        self.alive_chunks
-            .get_mut(&(chunk_x as i32, chunk_y as i32))
-            .map(|chunk| &mut chunk.tiles[local_y * chunk.width + local_x])
     }
 
     pub fn update(&mut self) {
