@@ -1,13 +1,16 @@
 use eframe::egui;
+use crate::math::{euclidean_mod, div_floor};
 
 mod action;
 mod bresenham;
 mod chunk;
 mod chunk_list;
 mod colors;
+mod tile_checks;
 mod tile_map;
 mod tiles;
 mod viewport;
+mod math;
 
 use bresenham::plot_line;
 use chunk_list::ChunkList;
@@ -115,13 +118,18 @@ impl MyApp {
         should_update
     }
 
-    fn tile_kind_selector( &mut self, ui: &mut egui::Ui) {
+    fn tile_kind_selector(&mut self, ui: &mut egui::Ui) {
         ComboBox::from_label("Tile Type")
             .selected_text(format!("{:?}", self.brush_element))
             .show_ui(ui, |ui| {
                 ui.selectable_value(&mut self.brush_element, TileKind::Empty, "Empty");
-                ui.selectable_value(&mut self.brush_element, TileKind::GameOfLife, "Game of Life");
+                ui.selectable_value(
+                    &mut self.brush_element,
+                    TileKind::GameOfLife,
+                    "Game of Life",
+                );
                 ui.selectable_value(&mut self.brush_element, TileKind::Sand, "Sand");
+                ui.selectable_value(&mut self.brush_element, TileKind::Stone, "Stone");
             });
     }
 
@@ -209,61 +217,65 @@ impl MyApp {
         let (max_pixels_x, max_pixels_y) = self.calculate_max_pixel_coord(max_chunk_x, max_chunk_y);
 
         // Update offsets based on mouse drag
-        self.viewport.offset_x = ((self.viewport.offset_x as isize - delta.x as isize) as i32)
-            .clamp(min_pixels_x, max_pixels_x) as usize;
+        self.viewport.offset_x = ((self.viewport.offset_x - delta.x as isize) as i32)
+            .clamp(min_pixels_x, max_pixels_x) as isize;
 
-        self.viewport.offset_y = ((self.viewport.offset_y as isize - delta.y as isize) as i32)
-            .clamp(min_pixels_y, max_pixels_y) as usize;
+        self.viewport.offset_y = ((self.viewport.offset_y - delta.y as isize) as i32)
+            .clamp(min_pixels_y, max_pixels_y) as isize;
     }
 
-    pub fn paint_line(&mut self, start: Pos2, end: Pos2, brush_size: usize) {
-        // Convert screen coordinates to world coordinates
-        let start_tile_x = (self.viewport.offset_x as f32 + start.x) as usize / self.viewport.scale;
-        let start_tile_y = (self.viewport.offset_y as f32 + start.y) as usize / self.viewport.scale;
+pub fn paint_line(&mut self, start: Pos2, end: Pos2, brush_size: usize) {
+    let scale = self.viewport.scale as f32;
 
-        let end_tile_x = (self.viewport.offset_x as f32 + end.x) as usize / self.viewport.scale;
-        let end_tile_y = (self.viewport.offset_y as f32 + end.y) as usize / self.viewport.scale;
+    // Convert screen → world tile coordinates
+    let start_tile_x = ((start.x + self.viewport.offset_x as f32) / scale).floor() as isize;
+    let start_tile_y = ((start.y + self.viewport.offset_y as f32) / scale).floor() as isize;
+    let end_tile_x = ((end.x + self.viewport.offset_x as f32) / scale).floor() as isize;
+    let end_tile_y = ((end.y + self.viewport.offset_y as f32) / scale).floor() as isize;
 
-        // Use Bresenham’s algorithm to get all the tiles along the line
-        let line_points = plot_line(
-            start_tile_x as isize,
-            start_tile_y as isize,
-            end_tile_x as isize,
-            end_tile_y as isize,
-        );
+    // Bresenham line
+    let line_points = plot_line(start_tile_x, start_tile_y, end_tile_x, end_tile_y);
+    let brush_radius = (brush_size / 2) as isize;
 
-        let brush_radius = (brush_size / 2) as isize;
+    for (tx, ty) in line_points {
+        for dy in -brush_radius..=brush_radius {
+            for dx in -brush_radius..=brush_radius {
+                let world_x = tx + dx;
+                let world_y = ty + dy;
 
-        for (tx, ty) in line_points {
-            for dy in -brush_radius..=brush_radius {
-                for dx in -brush_radius..=brush_radius {
-                    let px = tx + dx;
-                    let py = ty + dy;
+                let chunk_w = self.chunks.chunk_width;
+                let chunk_h = self.chunks.chunk_height;
 
-                    if px < 0 || py < 0 {
-                        continue;
-                    }
+                // Use floor division to handle negative coordinates correctly
+                let chunk_x = div_floor(world_x, chunk_w as isize);
+                let chunk_y = div_floor(world_y, chunk_h as isize);
+                let local_x = euclidean_mod(world_x, chunk_w);
+                let local_y = euclidean_mod(world_y, chunk_h);
 
-                    let px = px as usize;
-                    let py = py as usize;
-
-                    let chunk_width = self.chunks.chunk_width;
-                    let chunk_height = self.chunks.chunk_height;
-
-                    let chunk_x = (px / chunk_width) as i32;
-                    let chunk_y = (py / chunk_height) as i32;
-
-                    let local_x = px % chunk_width;
-                    let local_y = py % chunk_height;
-
-                    if let Some(chunk) = self.chunks.alive_chunks.get_mut(&(chunk_x, chunk_y)) {
-                        chunk.tiles[local_y * chunk.width + local_x] = self.brush_element;
+                if let Some(chunk) = self.chunks.alive_chunks.get_mut(&(chunk_x as i32, chunk_y as i32)) {
+                    let idx = local_y as usize * chunk.width + local_x as usize;
+                    if idx < chunk.tiles.len() {
+                        chunk.tiles[idx] = self.brush_element;
                         chunk.mark_dirty();
                     }
                 }
             }
         }
     }
+}
+
+// Same helpers used in rendering
+fn div_floor(a: isize, b: isize) -> isize {
+    let mut q = a / b;
+    if (a ^ b) < 0 && a % b != 0 {
+        q -= 1;
+    }
+    q
+}
+
+fn euclidean_mod(a: isize, b: isize) -> isize {
+    ((a % b + b) % b)
+}
 
     fn create_central_panel(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         self.viewport.set_texture_from_chunks(ui, &self.chunks);
@@ -341,3 +353,5 @@ impl FrameTimer {
         self.fps
     }
 }
+
+

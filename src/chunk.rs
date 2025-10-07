@@ -77,6 +77,7 @@ impl Chunk {
                     let action = rule(x, y, self, chunk_neighbors);
                     if !matches!(action, Action::None) {
                         actions.push(action.clone());
+                        break; // only one action per tile per update
                     }
                 }
             }

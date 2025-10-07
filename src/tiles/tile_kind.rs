@@ -1,11 +1,12 @@
 
-use crate::{chunk::Chunk, colors::Colors, tiles::game_of_life::GameOfLife, tiles::empty::Empty, action::Action, tiles::powder::Powder};
+use crate::{action::Action, chunk::Chunk, colors::Colors, tiles::{empty::Empty, game_of_life::GameOfLife, powder::Powder, base_elements::{Sand, Stone}}};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TileKind {
     GameOfLife,
     Empty,
     Sand,
+    Stone,
 }
 
 impl TileKind {
@@ -13,7 +14,8 @@ impl TileKind {
         match self {
             TileKind::GameOfLife => GameOfLife::COLOR,
             TileKind::Empty => Empty::COLOR,
-            TileKind::Sand => Powder::COLOR,
+            TileKind::Sand => Sand::COLOR,
+            TileKind::Stone => Stone::COLOR,
         }
     }
 
@@ -21,10 +23,13 @@ impl TileKind {
         &self,
     ) -> &'static [fn(usize, usize, &Chunk, &[&Chunk]) -> Action] {
         match self {
-            TileKind::GameOfLife => &[GameOfLife::death_rule],
-            TileKind::Empty => &[GameOfLife::birth_rule],
-            TileKind::Sand => &[Powder::fall_down_rule],
+            TileKind::GameOfLife => &[/*GameOfLife::death_rule*/],
+            TileKind::Empty => &[/*GameOfLife::birth_rule*/],
+            TileKind::Sand => &[Powder::fall_down_rule, Powder::fall_diagonal_rule],
+            TileKind::Stone => &[],
+
         }
     }
 }
+
 
